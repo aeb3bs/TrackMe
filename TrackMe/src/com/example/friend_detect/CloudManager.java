@@ -1,5 +1,6 @@
 package com.example.friend_detect;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
@@ -43,9 +44,69 @@ public class CloudManager {
 		sendRequest pid0 = new sendRequest();
 		getTrackingId gti = new getTrackingId();
 		String trackingIdTracker = gti.execute(phoneNumber,credentials).get();
-		Object[]params = {phoneNumber, credentials, trackingIdTracker};
+		Object[]params = {credentials, trackingIdTracker};
 		pid0.execute(params);
 	}
+	public static void approveRequest(String phoneNumber) throws InterruptedException, ExecutionException
+	{
+		approveRequest pid0 = new approveRequest();
+		getTrackingId gti = new getTrackingId();
+		String trackingIdTrackee = gti.execute(phoneNumber,credentials).get();
+		Object[]params = {trackingIdTrackee,credentials};
+		pid0.execute(params);
+	}
+	public static ArrayList<User> getTrackees() throws InterruptedException, ExecutionException
+	{
+		Object[]params={credentials};
+		getTrackees pid0 = new getTrackees();
+		return pid0.execute(params).get();
+	}
+}
+class getTrackees extends AsyncTask<Object, Void, ArrayList<User>>
+{
+	@Override
+	protected ArrayList<User> doInBackground(Object... params) {
+		BasicAWSCredentials credentials = (BasicAWSCredentials) params[0];
+		AmazonDynamoDBClient client = new AmazonDynamoDBClient(credentials);
+		Map<String, Condition>scanfilter = new HashMap<String, Condition>();
+		Condition condition1 = new Condition()
+		.withComparisonOperator(ComparisonOperator.EQ.toString())
+		.withAttributeValueList(new AttributeValue().withS(MainActivity.myAccount.getTrackId()));
+		Condition condition2 = new Condition()
+		.withComparisonOperator(ComparisonOperator.EQ.toString())
+		.withAttributeValueList(new AttributeValue().withN("1"));
+		scanfilter.put("trackingIdTracker", condition1);
+		scanfilter.put("status",condition2);
+		ScanRequest scanRequest = new ScanRequest();
+		scanRequest.setScanFilter(scanfilter);
+		scanRequest.setTableName("USER_REQUESTS");
+		ScanResult sr = client.scan(scanRequest);
+		ArrayList<String>linkingIds=new ArrayList<String>();
+		for(Map<String,AttributeValue>m: sr.getItems())
+		{
+			linkingIds.add(m.get("trackingIdTrackee").getS());
+		}
+		ArrayList<User>users = new ArrayList<User>();
+		for(String s:linkingIds)
+		{
+		Condition condition = new Condition()
+		.withAttributeValueList(new AttributeValue().withS(s))
+		.withComparisonOperator(ComparisonOperator.EQ.toString());
+		scanfilter = new HashMap<String, Condition>();
+		scanfilter.put("trackingId",condition);
+		scanRequest = new ScanRequest();
+		scanRequest.setScanFilter(scanfilter);
+		scanRequest.setTableName("USERS");
+		sr = client.scan(scanRequest);
+		for(Map<String,AttributeValue>m:sr.getItems())
+			{
+			User temp = new User(m.get("deviceId").getS(),m.get("trackingId").getS(),Double.parseDouble(m.get("lat").getN()),Double.parseDouble(m.get("lon").getN()),m.get("phoneNumber").getS());
+			users.add(temp);
+			}
+		}
+		return users;
+	}
+	
 }
 class pushLocation extends AsyncTask<Object,Void,Boolean>
 {
@@ -55,7 +116,7 @@ class pushLocation extends AsyncTask<Object,Void,Boolean>
 		BasicAWSCredentials credentials = (BasicAWSCredentials) params[1];
 		AmazonDynamoDBClient client = new AmazonDynamoDBClient(credentials);
 		Map<String, AttributeValue> key = new HashMap<String, AttributeValue>();
-		key.put("deviceId", new AttributeValue().withS(""+MainActivity.myAccount.getDeviceId()));
+		key.put("deviceId", new AttributeValue().withS(MainActivity.myAccount.getDeviceId()));
 		Map<String, AttributeValueUpdate> item = new HashMap<String, AttributeValueUpdate>();
 		item.put("lat", new AttributeValueUpdate().withValue(new AttributeValue(""+arg0.getLatitude())));
 		item.put("lon", new AttributeValueUpdate().withValue(new AttributeValue(""+arg0.getLongitude())));
@@ -147,47 +208,20 @@ class getTrackingId extends AsyncTask<Object, Void, String>
 }
 class sendRequest extends AsyncTask<Object, Void, Void>
 {
-	//Note that there might be two deviceIds that map to the same phone number. (i.e. what if someone changes phones).
-	//If we were to release this application we would take most recent user account determined with the time field,
-	//and delete all the older user accounts.
 	@Override
 	protected Void doInBackground(Object... params) {
-		String phoneNumber = (String)params[0];
-		BasicAWSCredentials credentials = (BasicAWSCredentials) params[1];
+		BasicAWSCredentials credentials = (BasicAWSCredentials) params[0];
 		String trackingIdTrackee = MainActivity.myAccount.getTrackId();
-		String trackingIdTracker = (String) params[2];
+		String trackingIdTracker = (String) params[1];
 		AmazonDynamoDBClient client = new AmazonDynamoDBClient(credentials);
-		Map<String, Condition>scanfilter = new HashMap<String, Condition>();
-		Condition condition = new Condition()
-		.withComparisonOperator(ComparisonOperator.EQ.toString())
-		.withAttributeValueList(new AttributeValue().withS(trackingIdTracker));
-		scanfilter.put("trackingIdTracker", condition);
-		ScanRequest scanRequest = new ScanRequest();
-		scanRequest.setScanFilter(scanfilter);
-		scanRequest.setTableName("USERS");
-		ScanResult sr = client.scan(scanRequest);
-		if(sr.getItems().size()==0)
-		{
-			PutItemRequest pr = new PutItemRequest();
-			HashMap<String,AttributeValue>item=new HashMap<String,AttributeValue>();
-			item.put("trackingIdTracker", new AttributeValue().withS(trackingIdTracker));
-			//item.put("trackingIdTrackeePending", new AttributeValue().withM());
-			pr.withTableName("USER_REQUESTS");
-			pr.withItem(item);
-			PutItemResult send = client.putItem(pr);
-		}
-		else
-		{
-			Map<String, AttributeValue> key = new HashMap<String, AttributeValue>();
-			key.put("trackingIdTracker", new AttributeValue().withS(""+MainActivity.myAccount.getDeviceId()));
-			Map<String, AttributeValueUpdate> item = new HashMap<String, AttributeValueUpdate>();
-			item.put("time", new AttributeValueUpdate().withValue(new AttributeValue(""+System.currentTimeMillis())));
-			UpdateItemRequest updateRequest = new UpdateItemRequest();
-			updateRequest.setKey(key);
-			updateRequest.withTableName("USER_REQUESTS");
-			updateRequest.withAttributeUpdates(item);
-			client.updateItem(updateRequest);
-		}
+		Map<String, AttributeValue> item = new HashMap<String, AttributeValue>();
+		item.put("trackingIdTracker", new AttributeValue().withS(""+trackingIdTracker));
+		item.put("trackingIdTrackee", new AttributeValue().withS(""+trackingIdTrackee));
+		item.put("status", new AttributeValue().withN("0"));
+		PutItemRequest putRequest = new PutItemRequest();
+		putRequest.withTableName("USER_REQUESTS");
+		putRequest.withItem(item);
+		client.putItem(putRequest);
 		return null;
 	}
 }
@@ -195,15 +229,15 @@ class approveRequest extends AsyncTask<Object,Void,Boolean>
 {
 	@Override
 	protected Boolean doInBackground(Object... params) {
-		Location arg0 = (Location) params[0];
+		String trackingIdTrackee = (String) params[0];
 		BasicAWSCredentials credentials = (BasicAWSCredentials) params[1];
+		String trackingIdTracker = MainActivity.myAccount.getTrackId();
 		AmazonDynamoDBClient client = new AmazonDynamoDBClient(credentials);
 		Map<String, AttributeValue> key = new HashMap<String, AttributeValue>();
-		key.put("trackingIdTracker", new AttributeValue().withS(""+MainActivity.myAccount.getDeviceId()));
+		key.put("trackingIdTracker", new AttributeValue().withS(trackingIdTracker));
+		key.put("trackingIdTrackee", new AttributeValue().withS(trackingIdTrackee));
 		Map<String, AttributeValueUpdate> item = new HashMap<String, AttributeValueUpdate>();
-		item.put("lat", new AttributeValueUpdate().withValue(new AttributeValue(""+arg0.getLatitude())));
-		item.put("lon", new AttributeValueUpdate().withValue(new AttributeValue(""+arg0.getLongitude())));
-		item.put("time", new AttributeValueUpdate().withValue(new AttributeValue(""+System.currentTimeMillis())));
+		item.put("status", new AttributeValueUpdate().withValue(new AttributeValue().withN("1")));
 		UpdateItemRequest updateRequest = new UpdateItemRequest();
 		updateRequest.setKey(key);
 		updateRequest.withTableName("USER_REQUESTS");
@@ -211,4 +245,50 @@ class approveRequest extends AsyncTask<Object,Void,Boolean>
 		client.updateItem(updateRequest);
 		return true;
 	}
+}
+class getRequests extends AsyncTask<Object, Void, ArrayList<User>>
+{
+	@Override
+	protected ArrayList<User> doInBackground(Object... params) {
+		BasicAWSCredentials credentials = (BasicAWSCredentials) params[0];
+		AmazonDynamoDBClient client = new AmazonDynamoDBClient(credentials);
+		Map<String, Condition>scanfilter = new HashMap<String, Condition>();
+		Condition condition1 = new Condition()
+		.withComparisonOperator(ComparisonOperator.EQ.toString())
+		.withAttributeValueList(new AttributeValue().withS(MainActivity.myAccount.getTrackId()));
+		Condition condition2 = new Condition()
+		.withComparisonOperator(ComparisonOperator.EQ.toString())
+		.withAttributeValueList(new AttributeValue().withN("0"));
+		scanfilter.put("trackingIdTracker", condition1);
+		scanfilter.put("status",condition2);
+		ScanRequest scanRequest = new ScanRequest();
+		scanRequest.setScanFilter(scanfilter);
+		scanRequest.setTableName("USER_REQUESTS");
+		ScanResult sr = client.scan(scanRequest);
+		ArrayList<String>linkingIds=new ArrayList<String>();
+		for(Map<String,AttributeValue>m: sr.getItems())
+		{
+			linkingIds.add(m.get("trackingIdTrackee").getS());
+		}
+		ArrayList<User>users = new ArrayList<User>();
+		for(String s:linkingIds)
+		{
+		Condition condition = new Condition()
+		.withAttributeValueList(new AttributeValue().withS(s))
+		.withComparisonOperator(ComparisonOperator.EQ.toString());
+		scanfilter = new HashMap<String, Condition>();
+		scanfilter.put("trackingId",condition);
+		scanRequest = new ScanRequest();
+		scanRequest.setScanFilter(scanfilter);
+		scanRequest.setTableName("USERS");
+		sr = client.scan(scanRequest);
+		for(Map<String,AttributeValue>m:sr.getItems())
+			{
+			User temp = new User(m.get("deviceId").getS(),m.get("trackingId").getS(),Double.parseDouble(m.get("lat").getN()),Double.parseDouble(m.get("lon").getN()),m.get("phoneNumber").getS());
+			users.add(temp);
+			}
+		}
+		return users;
+	}
+	
 }

@@ -20,6 +20,11 @@ private String phoneNumber;
 		lon = -5;
 		phoneNumber = "";
 	}
+	@Override
+	public String toString() {
+		return "User [deviceId=" + deviceId + ", trackId=" + trackId + ", lat="
+				+ lat + ", lon=" + lon + ", phoneNumber=" + phoneNumber + "]";
+	}
 	public void setDeviceId(String deviceId) {
 		this.deviceId = deviceId;
 	}

@@ -1,5 +1,6 @@
 package com.example.friend_detect;
 
+import java.util.ArrayList;
 import java.util.concurrent.ExecutionException;
 
 import android.app.Activity;
@@ -13,7 +14,6 @@ import android.telephony.TelephonyManager;
 import android.util.Log;
 import android.view.Menu;
 import android.view.MenuItem;
-import android.widget.Toast;
 
 public class MainActivity extends Activity {
 	public static User myAccount;
@@ -26,12 +26,27 @@ public class MainActivity extends Activity {
 		getDeviceId();
 		signIn();
 		startGPSTracking();
-		sendRequest();
+		sendRequest("7032814458");
+		approveRequest("7032814458");
+		ArrayList<User>trackees=getTrackees();
+		Log.d("","TEST:"+trackees);
 	}
-
-	public void sendRequest() {
+	public ArrayList<User> getTrackees()
+	{
 		try {
-			CloudManager.sendRequest("5712947610");
+			return CloudManager.getTrackees();
+		} catch (InterruptedException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		} catch (ExecutionException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+		return null;
+	}
+	public void approveRequest(String phoneNumber){
+		try {
+			CloudManager.approveRequest(phoneNumber);
 		} catch (InterruptedException e) {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
@@ -40,7 +55,17 @@ public class MainActivity extends Activity {
 			e.printStackTrace();
 		}
 	}
-
+	public void sendRequest(String phoneNumber) {
+		try {
+			CloudManager.sendRequest(phoneNumber);
+		} catch (InterruptedException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		} catch (ExecutionException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+	}
 	public void startGPSTracking() {
 		Intent mServiceIntent = new Intent(this, GPSTracker.class);
 		this.startService(mServiceIntent);

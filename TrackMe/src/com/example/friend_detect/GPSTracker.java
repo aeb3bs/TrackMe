@@ -18,7 +18,7 @@ public class GPSTracker extends Service implements LocationListener{
 		
 		LocationManager mLocationManager;
 		mLocationManager = (LocationManager) getSystemService(LOCATION_SERVICE);
-		mLocationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 5000, 0, this);
+		mLocationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 10000, 0, this);
 		return Service.START_NOT_STICKY;
 	  }
 	public GPSTracker() {
