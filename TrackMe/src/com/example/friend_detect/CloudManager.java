@@ -2,6 +2,7 @@ package com.example.friend_detect;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ExecutionException;
@@ -25,13 +26,14 @@ import com.amazonaws.services.dynamodbv2.model.UpdateItemRequest;
 public class CloudManager {
 	private static BasicAWSCredentials credentials = new BasicAWSCredentials("AKIAJIPVGDJJUBINMZAQ", "pZ0bHTCdvFWVXQIKsyEjADQ5EVqBYQhz65MbDuQ4");
 	public CloudManager(){}
-	
+	//pushes the location of this device to the database
 	public static void pushLocation(Location arg0)
 	{
 		pushLocation pid0 = new pushLocation();
 		Object[]params = {arg0,credentials};
 		pid0.execute(params);
 	}
+	//downloads user info from database that corresponds with deviceId
 	public static void signIn(String deviceId, String phoneNumber) throws InterruptedException, ExecutionException
 	{
 		signIn pid0 = new signIn();
@@ -39,6 +41,7 @@ public class CloudManager {
 		User myUser = pid0.execute(params).get();
 		MainActivity.myAccount = myUser;
 	}
+	//sends request to other device 
 	public static void sendRequest(String phoneNumber) throws InterruptedException, ExecutionException
 	{
 		sendRequest pid0 = new sendRequest();
@@ -47,6 +50,7 @@ public class CloudManager {
 		Object[]params = {credentials, trackingIdTracker};
 		pid0.execute(params);
 	}
+	//accepts request of other device to begin tracking
 	public static void approveRequest(String phoneNumber) throws InterruptedException, ExecutionException
 	{
 		approveRequest pid0 = new approveRequest();
@@ -55,11 +59,141 @@ public class CloudManager {
 		Object[]params = {trackingIdTrackee,credentials};
 		pid0.execute(params);
 	}
+	//returns all devices that are being tracked by this device
 	public static ArrayList<User> getTrackees() throws InterruptedException, ExecutionException
 	{
 		Object[]params={credentials};
 		getTrackees pid0 = new getTrackees();
+		ArrayList<User>users = pid0.execute(params).get();
+		return users;
+	}
+	public static ArrayList<User> getRequests() throws InterruptedException, ExecutionException
+	{
+		Object[]params={credentials};
+		getRequests pid0 = new getRequests();
 		return pid0.execute(params).get();
+	}
+
+	public static boolean phoneNumberExists(String phoneNumber) throws InterruptedException, ExecutionException
+	{
+		phoneNumberExists pid0 = new phoneNumberExists();
+		Object[]params = {phoneNumber,credentials};
+		return pid0.execute(params).get();
+	}
+	public static void filterContacts() throws InterruptedException, ExecutionException
+	{
+		filterContactExists pid0 = new filterContactExists();
+		filterRequestExists pid1 = new filterRequestExists();
+		Object[]params={credentials};
+		HashSet<String>hs = new HashSet<String>();
+		hs=pid0.execute(params).get();
+		HashSet<String>phoneNumbers = new HashSet<String>();
+		phoneNumbers=pid1.execute(params).get();
+		for(int index=MainActivity.myContacts.size()-1;index>=0;index--)
+		{
+			if(!hs.contains(MainActivity.myContacts.get(index).phoneNumber))
+			{
+				MainActivity.myContacts.remove(index);
+			}
+		}
+		for(int index=MainActivity.myContacts.size()-1;index>=0;index--)
+		{
+			if(phoneNumbers.contains(MainActivity.myContacts.get(index).phoneNumber))
+			{
+				MainActivity.myContacts.remove(index);
+			}
+		}
+	}
+}
+//class getRequests extends AsyncTask<Object, Void, ArrayList<User>>
+//{
+//	@Override
+//	protected ArrayList<User> doInBackground(Object... params) {
+//		BasicAWSCredentials credentials = (BasicAWSCredentials) params[0];
+//		AmazonDynamoDBClient client = new AmazonDynamoDBClient(credentials);
+//		Map<String, Condition>scanfilter = new HashMap<String, Condition>();
+//		Condition condition = new Condition()
+//		.withComparisonOperator(ComparisonOperator.EQ.toString())
+//		.withAttributeValueList(new AttributeValue().withS(MainActivity.myAccount.getTrackId()));
+//		scanfilter.put("trackingIdTracker", condition);
+//		ScanRequest scanRequest1 = new ScanRequest();
+//		scanRequest1.setTableName("USER_REQUESTS");
+//		ScanResult sr1 = client.scan(scanRequest1);
+//		
+//		return null;
+//	}
+//}
+class filterContactExists extends AsyncTask<Object,Void, HashSet<String>>
+{
+	@Override
+	protected HashSet<String> doInBackground(Object... params) {
+		HashSet<String>phoneNumbers=new HashSet<String>();
+		BasicAWSCredentials credentials = (BasicAWSCredentials) params[0];
+		AmazonDynamoDBClient client = new AmazonDynamoDBClient(credentials);
+		ScanRequest scanRequest = new ScanRequest();
+		scanRequest.setTableName("USERS");
+		ScanResult sr = client.scan(scanRequest);
+		for(Map<String,AttributeValue>m:sr.getItems())
+		{
+			phoneNumbers.add(m.get("phoneNumber").getS());
+		}
+		return phoneNumbers;
+	}
+}
+class filterRequestExists extends AsyncTask<Object,Void, HashSet<String>>
+{
+	@Override
+	protected HashSet<String> doInBackground(Object... params) {
+		HashSet<String>trackers=new HashSet<String>();
+		HashSet<String>phoneNumbers=new HashSet<String>();
+		BasicAWSCredentials credentials = (BasicAWSCredentials) params[0];
+		AmazonDynamoDBClient client = new AmazonDynamoDBClient(credentials);
+		Map<String, Condition>scanfilter = new HashMap<String, Condition>();
+		Condition condition = new Condition()
+		.withComparisonOperator(ComparisonOperator.EQ.toString())
+		.withAttributeValueList(new AttributeValue().withS(MainActivity.myAccount.getTrackId()));
+		scanfilter.put("trackingIdTrackee", condition);
+		ScanRequest scanRequest1 = new ScanRequest();
+		scanRequest1.setTableName("USER_REQUESTS");
+		ScanResult sr1 = client.scan(scanRequest1);
+		for(Map<String,AttributeValue>m:sr1.getItems())
+		{
+			trackers.add(m.get("trackingIdTracker").getS());
+		}
+		ScanRequest scanRequest2 = new ScanRequest();
+		scanRequest2.setTableName("USERS");
+		ScanResult sr2 = client.scan(scanRequest2);
+		for(int index=sr2.getItems().size()-1;index>=0;index--)
+		{
+			Map<String,AttributeValue>m=sr2.getItems().get(index);
+			if(trackers.contains(m.get("trackingId").getS()))
+			{
+				phoneNumbers.add(m.get("phoneNumber").getS());
+			}
+		}
+		return phoneNumbers;
+	}
+}
+//TODO This should not be a scan. Very inefficient and would make more sense to do some sort of getitemrequest
+class phoneNumberExists extends AsyncTask<Object, Void, Boolean>
+{
+	@Override
+	protected Boolean doInBackground(Object... params) {
+		BasicAWSCredentials credentials = (BasicAWSCredentials) params[1];
+		AmazonDynamoDBClient client = new AmazonDynamoDBClient(credentials);
+		Map<String, Condition>scanfilter = new HashMap<String, Condition>();
+		Condition condition = new Condition()
+		.withComparisonOperator(ComparisonOperator.EQ.toString())
+		.withAttributeValueList(new AttributeValue().withS((String) params[0]));
+		scanfilter.put("phoneNumber", condition);
+		ScanRequest scanRequest = new ScanRequest();
+		scanRequest.setScanFilter(scanfilter);
+		scanRequest.setTableName("USERS");
+		ScanResult sr = client.scan(scanRequest);
+		if(sr.getItems().size()>0)
+			return true;
+		else
+			return false;
 	}
 }
 class getTrackees extends AsyncTask<Object, Void, ArrayList<User>>
@@ -100,7 +234,13 @@ class getTrackees extends AsyncTask<Object, Void, ArrayList<User>>
 		sr = client.scan(scanRequest);
 		for(Map<String,AttributeValue>m:sr.getItems())
 			{
-			User temp = new User(m.get("deviceId").getS(),m.get("trackingId").getS(),Double.parseDouble(m.get("lat").getN()),Double.parseDouble(m.get("lon").getN()),m.get("phoneNumber").getS());
+			String s1=m.get("lat").getS();
+			s1=s1.replace(",","");
+			double lat = Double.parseDouble(s1);
+			String s2=m.get("lon").getS();
+			s2=s2.replace(",","");
+			double lon = Double.parseDouble(s2);
+			User temp = new User(m.get("deviceId").getS(),m.get("trackingId").getS(),lat,lon,m.get("phoneNumber").getS());
 			users.add(temp);
 			}
 		}
@@ -129,6 +269,7 @@ class pushLocation extends AsyncTask<Object,Void,Boolean>
 		return true;
 	}
 }
+//TODO Upon signing in, you should check if other user has same phone number as you. If so, keep most recent user, and delete all the others
 class signIn extends AsyncTask<Object,Void,User>
 {
 	@Override
@@ -212,7 +353,7 @@ class sendRequest extends AsyncTask<Object, Void, Void>
 	protected Void doInBackground(Object... params) {
 		BasicAWSCredentials credentials = (BasicAWSCredentials) params[0];
 		String trackingIdTrackee = MainActivity.myAccount.getTrackId();
-		String trackingIdTracker = (String) params[1];
+		String trackingIdTracker=(String) params[1];
 		AmazonDynamoDBClient client = new AmazonDynamoDBClient(credentials);
 		Map<String, AttributeValue> item = new HashMap<String, AttributeValue>();
 		item.put("trackingIdTracker", new AttributeValue().withS(""+trackingIdTracker));
@@ -256,6 +397,7 @@ class getRequests extends AsyncTask<Object, Void, ArrayList<User>>
 		Condition condition1 = new Condition()
 		.withComparisonOperator(ComparisonOperator.EQ.toString())
 		.withAttributeValueList(new AttributeValue().withS(MainActivity.myAccount.getTrackId()));
+		Log.d("","TEST:"+MainActivity.myAccount.getDeviceId());
 		Condition condition2 = new Condition()
 		.withComparisonOperator(ComparisonOperator.EQ.toString())
 		.withAttributeValueList(new AttributeValue().withN("0"));
@@ -265,30 +407,28 @@ class getRequests extends AsyncTask<Object, Void, ArrayList<User>>
 		scanRequest.setScanFilter(scanfilter);
 		scanRequest.setTableName("USER_REQUESTS");
 		ScanResult sr = client.scan(scanRequest);
-		ArrayList<String>linkingIds=new ArrayList<String>();
+		HashSet<String>linkingIds=new HashSet<String>();
 		for(Map<String,AttributeValue>m: sr.getItems())
 		{
 			linkingIds.add(m.get("trackingIdTrackee").getS());
 		}
 		ArrayList<User>users = new ArrayList<User>();
+		scanRequest = new ScanRequest();
 		for(String s:linkingIds)
 		{
 		Condition condition = new Condition()
 		.withAttributeValueList(new AttributeValue().withS(s))
 		.withComparisonOperator(ComparisonOperator.EQ.toString());
-		scanfilter = new HashMap<String, Condition>();
-		scanfilter.put("trackingId",condition);
-		scanRequest = new ScanRequest();
-		scanRequest.setScanFilter(scanfilter);
+		scanRequest.addScanFilterEntry("trackingId", condition);
+		}
 		scanRequest.setTableName("USERS");
 		sr = client.scan(scanRequest);
 		for(Map<String,AttributeValue>m:sr.getItems())
-			{
-			User temp = new User(m.get("deviceId").getS(),m.get("trackingId").getS(),Double.parseDouble(m.get("lat").getN()),Double.parseDouble(m.get("lon").getN()),m.get("phoneNumber").getS());
-			users.add(temp);
-			}
+		{
+			if(linkingIds.contains(m.get("trackingId").getS())){
+						User temp = new User(m.get("deviceId").getS(),m.get("trackingId").getS(),Double.parseDouble(m.get("lat").getS()),Double.parseDouble(m.get("lon").getS()),m.get("phoneNumber").getS());
+						users.add(temp);}
 		}
 		return users;
 	}
-	
 }
